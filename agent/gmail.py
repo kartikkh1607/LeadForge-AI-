@@ -227,6 +227,52 @@ class GmailTransport:
         except Exception:  # noqa: BLE001 -- sanitize provider errors
             raise GmailError("Gmail thread unavailable; sync skipped this thread") from None
 
+    def sent_messages(self, query, limit=500):
+        """Read-only: metadata for sent messages matching a Gmail search query."""
+        try:
+            ids, token = [], None
+            while len(ids) < limit:
+                params = {"q": query, "maxResults": min(100, limit - len(ids))}
+                if token:
+                    params["pageToken"] = token
+                response = self.client.get(API + "/messages", headers=self.headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+                ids += [m["id"] for m in data.get("messages", [])]
+                token = data.get("nextPageToken")
+                if not token:
+                    break
+            found = []
+            for message_id in ids[:limit]:
+                response = self.client.get(
+                    API + "/messages/" + message_id,
+                    headers=self.headers,
+                    params=[
+                        ("format", "metadata"),
+                        *(("metadataHeaders", h) for h in ("To", "Cc", "Subject", "Message-ID")),
+                    ],
+                )
+                response.raise_for_status()
+                item = response.json()
+                headers = {
+                    h["name"].lower(): h["value"]
+                    for h in item.get("payload", {}).get("headers", [])
+                    if isinstance(h, dict) and isinstance(h.get("value"), str)
+                }
+                found.append(
+                    {
+                        "id": item["id"],
+                        "thread_id": item["threadId"],
+                        "labels": list(item.get("labelIds", [])),
+                        "snippet": str(item.get("snippet", ""))[:500],
+                        "internal_date": int(item.get("internalDate", 0)),
+                        "headers": headers,
+                    }
+                )
+            return found
+        except Exception:  # noqa: BLE001 -- sanitize provider errors
+            raise GmailError("Gmail search unavailable; nothing imported") from None
+
     def reconcile(self, rfc_id):
         from datetime import UTC, datetime
 

@@ -29,6 +29,22 @@ class Dashboard:
     def settings(self):
         return effective_settings(self.db, self.base_settings)
 
+    def import_sent(self, subject="quick idea", days=180):
+        from agent.gmail_import import import_sent, run_with_gmail
+
+        settings = self.settings
+        return run_with_gmail(
+            settings,
+            lambda t: import_sent(self.db, t, settings.gmail_account, subject=subject, days=days),
+        )
+
+    def sync_inbox(self):
+        from agent.gmail_import import run_with_gmail
+        from agent.gmail_sync import sync
+
+        settings = self.settings
+        return run_with_gmail(settings, lambda t: sync(self.db, t, settings.gmail_account))
+
     def leads(self, *, stage=None, minimum_score=0, sort="newest", descending=True):
         columns = {"newest": "id", "score": "score", "business": "business", "stage": "stage"}
         if sort not in columns or not 0 <= minimum_score <= 100:

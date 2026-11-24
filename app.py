@@ -486,9 +486,52 @@ def show_pipeline(service):
     stats = view["summary"]
     st.subheader("Outreach pipeline")
     st.caption(
-        "Recorded facts only. Run `python -m agent.send_worker sync` to pull replies and "
-        "bounces (read-only)."
+        "Recorded facts only. Both buttons below are read-only: they never send, label or "
+        "delete mail."
     )
+    left, right = st.columns(2)
+    subject = left.text_input(
+        "Subject contains",
+        "quick idea",
+        help="Which sent emails to import. Leave empty to import every sent email.",
+    )
+    days = right.number_input("Look back (days)", 1, 365, 180)
+    left, right = st.columns(2)
+    if left.button(
+        "Import sent emails from Gmail",
+        help="Marks leads you already emailed from Gmail as contacted, so they are tracked "
+        "and never emailed twice.",
+    ):
+
+        def run_import():
+            report = service.import_sent(subject=subject, days=int(days))
+            st.session_state["import_unmatched"] = report.unmatched
+            st.session_state["import_summary"] = report.summary()
+
+        perform("import_sent", run_import, success="Import finished. See the summary below.")
+    if right.button(
+        "Sync replies, bounces and opt-outs",
+        help="Reads the Gmail threads of contacted leads and records what came back.",
+    ):
+
+        def run_sync():
+            report = service.sync_inbox()
+            st.session_state["sync_summary"] = (
+                f"Checked {report.threads_checked} threads; recorded {len(report.events)} new "
+                "events: "
+                + ", ".join(
+                    f"{k}={report.count(k)}"
+                    for k in ("reply", "opt_out", "bounce_hard", "spam_block", "auto_reply")
+                )
+            )
+
+        perform("sync_inbox", run_sync, success="Sync finished. See the summary below.")
+    for key in ("import_summary", "sync_summary"):
+        if key in st.session_state:
+            st.info(st.session_state[key])
+    if st.session_state.get("import_unmatched"):
+        with st.expander("Sent to addresses that are not LeadForge leads"):
+            st.write(sorted(set(st.session_state["import_unmatched"])))
     a, b, c, d = st.columns(4)
     a.metric("Contacted", stats["contacted"])
     b.metric("Bounced", stats["bounced"])

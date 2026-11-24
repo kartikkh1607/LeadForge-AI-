@@ -55,6 +55,7 @@ uv run streamlit run app.py --server.address 127.0.0.1 --server.port 8501
 # Gmail (requires a Google Cloud desktop OAuth client saved as credentials.json)
 uv run python -m agent.send_worker connect     # one-time OAuth
 uv run python -m agent.send_worker check
+uv run python -m agent.send_worker import-sent # record emails you sent straight from Gmail (read-only)
 uv run python -m agent.send_worker sync        # pull replies/bounces/opt-outs (read-only)
 
 # Follow-ups and conversions
@@ -65,10 +66,17 @@ uv run python -m agent.pipeline_cli progress --lead-id 12 --stage won --value 15
 uv run python -m agent.pipeline_cli summary
 ```
 
+Both Gmail actions are also buttons on the Tracker page. **Import sent emails** reads your
+Sent folder (default: subject contains "quick idea", last 180 days), matches each recipient
+to a lead by email or domain, records it as that lead's sent initial message and moves the
+lead to `contacted`. That stops LeadForge from emailing it again and lets **Sync** pick up
+replies, bounces and opt-outs on those threads. Recipients that aren't leads are listed, not
+created. Re-running either action is safe.
+
 ## Tests
 
 ```bash
-uv run pytest -q        # 442 tests, no network access
+uv run pytest -q        # 451 tests, no network access
 uv run ruff check .
 ```
 

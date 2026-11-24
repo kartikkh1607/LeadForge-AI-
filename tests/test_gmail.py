@@ -199,3 +199,39 @@ def test_non_string_gmail_ids_are_ambiguous(draft):
         .state
         == "uncertain"
     )
+
+
+def test_sent_messages_is_read_only_and_paginates():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path, dict(request.url.params)))
+        path = request.url.path
+        if path.endswith("/messages"):
+            token = request.url.params.get("pageToken")
+            if token:
+                return httpx.Response(200, json={"messages": [{"id": "m2"}]})
+            return httpx.Response(200, json={"messages": [{"id": "m1"}], "nextPageToken": "p2"})
+        mid = path.rsplit("/", 1)[-1]
+        return httpx.Response(
+            200,
+            json={
+                "id": mid,
+                "threadId": "t-" + mid,
+                "labelIds": ["SENT"],
+                "snippet": "hello",
+                "internalDate": "1795529107000",
+                "payload": {"headers": [{"name": "To", "value": "a@b.com"}]},
+            },
+        )
+
+    found = adapter(handler).sent_messages('in:sent subject:"quick idea"')
+    assert [m["id"] for m in found] == ["m1", "m2"]
+    assert found[0]["headers"]["to"] == "a@b.com"
+    assert {method for method, _, _ in seen} == {"GET"}
+
+
+def test_sent_messages_errors_are_sanitized():
+    transport = adapter(lambda request: httpx.Response(500, text="secret token detail"))
+    with pytest.raises(GmailError, match="nothing imported"):
+        transport.sent_messages("in:sent")
