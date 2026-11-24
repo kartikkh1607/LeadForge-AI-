@@ -8,7 +8,7 @@ import re
 from urllib.parse import urljoin, urlsplit
 
 from agent.evidence import normalized_text
-from agent.extraction import navigation, text
+from agent.extraction import navigation, text, unique_nodes
 from agent.safe_http import FetchError, public_url
 from agent.web_models import Observation
 
@@ -22,13 +22,24 @@ GENERIC = re.compile(
     re.IGNORECASE,
 )
 NEGATIVE = re.compile(
-    r"\b(not (?:available|for sale)|sold out|enrollment (?:is )?closed|discontinued)\b",
+    r"\b(not (?:available|for sale)|sold out|enrollment (?:is )?closed|discontinued|coming soon)\b",
     re.IGNORECASE,
 )
 SUBSECTION = re.compile(
     r"^(about|overview|curriculum|course (outline|materials|tuition)|what you|who (is|it's)|how |faq|frequently|pricing|price|enroll|register|sign up|tuition|requirements|materials|lessons|modules|reviews|testimonials|access|instructor)",
     re.IGNORECASE,
 )
+
+
+CARD_TITLE = re.compile(
+    r"(course|class|workshop|lesson|product|card)[-_]{0,2}(title|name|heading)", re.IGNORECASE
+)
+COURSE_CLASS = re.compile(r"(course|class|workshop|lesson)", re.IGNORECASE)
+
+
+def card_title(node):
+    classes = " ".join(node.get("class", []) or [])
+    return bool(classes and CARD_TITLE.search(classes))
 
 
 def safe_link(node, url):
@@ -71,9 +82,19 @@ def course_offers(soup, url, structured=()):
     landing_hint = bool(
         re.search(r"course|class|workshop|drawing-painting", urlsplit(url).path, re.IGNORECASE)
     )
-    for node in soup.find_all(
-        ["h1", "h2", "h3", "h4", "h5", "h6", "a", "strong", "b", "p", "span"]
-    ):
+    # A non-home page whose main content sells a course treats its <h1> as the product
+    # title even when the title itself lacks the word "course" (e.g. "Loose Florals").
+    main = soup.find("main") or soup.find("article") or soup.body or soup
+    main_text = " ".join(
+        text(n) for n in main.find_all(["p", "li", "a", "button", "span"]) if not navigation(n)
+    )
+    path = urlsplit(url).path.strip("/")
+    sells_course = bool(path and COURSE.search(main_text) and PURCHASE.search(main_text))
+    landing_hint = landing_hint or sells_course
+    tagged = soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "a", "strong", "b", "p", "span"])
+    # Page builders often render card titles as classed <div>s rather than headings.
+    classed = [n for n in soup.find_all(["div", "span", "p", "a"]) if card_title(n)]
+    for node in unique_nodes([*tagged, *classed]):
         name = text(node)
         if (
             navigation(node)
@@ -85,8 +106,15 @@ def course_offers(soup, url, structured=()):
         ):
             continue
         structured_method = metadata.get(normalized_text(name))
-        heading = node.name.startswith("h") and node.name[1:].isdigit()
-        if not (structured_method or COURSE.search(name) or node.name == "h1" and landing_hint):
+        is_card = card_title(node)
+        heading = node.name.startswith("h") and node.name[1:].isdigit() or is_card
+        course_card = is_card and bool(COURSE_CLASS.search(" ".join(node.get("class", []))))
+        if not (
+            structured_method
+            or COURSE.search(name)
+            or course_card
+            or (node.name == "h1" and landing_hint)
+        ):
             continue
         if not heading and not structured_method:
             if name.endswith((".", "!", ":")) or len(name.split()) > 12:
@@ -226,4 +254,97 @@ def course_offers(soup, url, structured=()):
                 supporting_text=spans,
             )
         )
+    if not any(r.evidence_classification == "online_offer" for r in results):
+        page_offer = single_course_page(soup, url, candidates, visible)
+        if page_offer:
+            results.append(page_offer)
     return results
+
+
+def under_course_section(block, title):
+    """True when the block's nearest preceding heading is the title or a course subsection.
+
+    Sections headed by another product ("Paint Brush Kit"), a promo question or unrelated
+    copy ("Meet your teacher") never contribute format or purchase evidence.
+    """
+    heading = block.find_previous(re.compile(r"^h[1-6]$"))
+    if heading is None:
+        return False
+    if heading is title:
+        return True
+    value = text(heading)
+    return "?" not in value and bool(SUBSECTION.search(value))
+
+
+def single_course_page(soup, url, candidates, visible):
+    """Join a sales page whose title, format and price live in separate sections.
+
+    Only applies when the page names exactly one course title (its <h1>); with two or
+    more course titles the page is a catalogue and evidence could cross products.
+    """
+    titles = {}
+    for node, name, structured_method in candidates:
+        is_title = node.name in {"h1", "h2", "h3", "h4", "h5", "h6"} or card_title(node)
+        if is_title and not SUBSECTION.search(name):
+            titles.setdefault(normalized_text(name), (node, name, structured_method))
+    h1s = [entry for entry in titles.values() if entry[0].name == "h1"]
+    if len(h1s) != 1:
+        return None
+    node, name, structured_method = h1s[0]
+    others = [
+        key
+        for key in titles
+        if key != normalized_text(name)
+        and key not in normalized_text(name)
+        and normalized_text(name) not in key
+    ]
+    if others:
+        return None
+    root = soup.find("main") or soup.find("article") or soup.body or soup
+    spans = [name]
+    purchase_link = None
+    for block in root.find_all(["p", "li", "a", "button", "span", "strong"]):
+        if navigation(block) or not under_course_section(block, node):
+            continue
+        value = text(block)
+        if (
+            not value
+            or len(value) > 600
+            or value in spans
+            or normalized_text(value) not in normalized_text(visible)
+            or not (
+                ONLINE.search(value)
+                or PURCHASE.search(value)
+                or COURSE.search(value)
+                # Hero copy directly under the title describes this product.
+                or block.find_previous(re.compile(r"^h[1-6]$")) is node
+            )
+        ):
+            continue
+        # Skip containers whose text is already represented by a child span.
+        if any(normalized_text(s) in normalized_text(value) for s in spans[1:]) and block.find(
+            ["p", "li", "a", "button", "span", "strong"]
+        ):
+            continue
+        spans.append(value)
+        if purchase_link is None and block.name == "a" and PURCHASE.search(value):
+            purchase_link = block
+        if len(spans) >= 30:
+            break
+    combined = " ".join(spans)
+    educational = bool(COURSE.search(combined) or structured_method == "schema_course")
+    online = educational and bool(ONLINE.search(combined))
+    offered = online and bool(PURCHASE.search(combined)) and not NEGATIVE.search(combined)
+    if not online:
+        return None
+    return Observation(
+        value=name,
+        source_url=url,
+        quote=" ".join(spans)[:4000],
+        method=structured_method or "single_course_page",
+        landing_url=public_url(url),
+        enrollment_text=next((s for s in spans if PURCHASE.search(s)), None),
+        enrollment_url=safe_link(purchase_link, url),
+        evidence_classification="online_offer" if offered else "online_course",
+        supporting_text=spans,
+    )
