@@ -142,3 +142,35 @@ def test_job_boards_and_news_sites_are_excluded_but_hosted_creators_are_not():
     assert excluded_domain("businessinsider.com", settings)
     assert not excluded_domain("michele.thinkific.com", settings)
     assert excluded_domain("thinkific.com", settings)
+
+
+def test_one_stray_faq_mismatch_does_not_block_a_rich_faq_site():
+    """Modelled on the live run: 35 consistent FAQs plus one refund question answered
+    in full on the FAQ page and only by a link-style line on the support page."""
+    questions = [f"How does lesson {i} work?" for i in range(1, 11)]
+    faq_html = "<section id='faq'><h2>FAQ</h2>" + "".join(
+        f"<h3>{q}</h3><p>Answer {i} for watercolor students.</p>" for i, q in enumerate(questions)
+    )
+    faq_html += "<h3>What is the refund policy?</h3><p>Lessons are digital and non-refundable.</p></section>"
+    faq_html += (
+        "<main><h1>Watercolor Online Course</h1><p>Self-paced video lessons.</p>"
+        "<a href='/enroll/w'>Enroll for $49</a><p>hello@art.com</p></main>"
+    )
+    support_html = (
+        "<section id='faq'><h2>FAQ</h2><h3>What is the refund policy?</h3>"
+        "<p>Please check the Sales and Refund Policy for full details.</p></section>"
+    )
+    pages = [
+        extract_page(faq_html, "https://art.com/courses/watercolor"),
+        extract_page(support_html, "https://art.com/customer-support"),
+    ]
+    q = evaluate_qualification(
+        Lead(id=1, domain="art.com", niche="watercolor", email="hello@art.com"),
+        pages,
+        {p.url: p.text for p in pages},
+        today=date(2026, 11, 24),
+    )
+    assert "contradictory_faq_answers" not in q.blockers
+    assert q.criteria["five_faqs"].points == 25
+    assert "1 conflicting excluded" in q.criteria["five_faqs"].reason
+    assert all(e.claim != "What is the refund policy?" for e in q.criteria["five_faqs"].evidence)

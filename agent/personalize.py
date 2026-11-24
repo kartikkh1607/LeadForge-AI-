@@ -13,7 +13,7 @@ from agent.compliance import compliance_is_current
 from agent.config import INITIAL_TEMPLATE, SUBJECT_TEMPLATE, UPGRADE_TEMPLATE, Settings
 from agent.evidence import draft_hash, evidence_matches, normalized_text, validate_draft
 from agent.models import Evidence, Message, Model
-from agent.qualify import current_qualification, verified_faqs
+from agent.qualify import current_qualification, heavy_conflict, verified_faqs
 from agent.source_context import context_hash, persisted_pages, quoted
 
 if TYPE_CHECKING:
@@ -139,7 +139,8 @@ def build_context(db: "Database", lead_id: int) -> dict:
     sources = db.sources(lead_id)
     pages = persisted_pages(db, lead_id)
     faqs, conflicts = verified_faqs(pages, sources)
-    if conflicts:
+    # Conflicting questions are already excluded from faqs and never reach a draft.
+    if heavy_conflict(faqs, conflicts):
         raise PersonalizationError("Contradictory FAQ answers require review")
     faqs = [q for q in faqs if _safe_slot(q.question) and _safe_slot(q.answer)]
     if len(faqs) < 2:
