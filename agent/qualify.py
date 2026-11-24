@@ -88,6 +88,16 @@ class Qualification(Model):
     grounded_personalization: bool = False
 
 
+def heavy_conflict(faqs, conflicts) -> bool:
+    """One stray mismatch (e.g. a support page that just links to the refund policy)
+    should not discard dozens of consistent FAQs. Conflicted questions are always
+    excluded from scoring and drafting; the lead is only blocked when conflicts are
+    a large share (over 20%) or too few consistent FAQs remain."""
+    if not conflicts:
+        return False
+    return len(faqs) < 5 or len(conflicts) * 5 > len(faqs) + len(conflicts)
+
+
 def verified_faqs(pages: list[PageData], sources: dict[str, str]) -> tuple[list[FAQ], list[str]]:
     grouped = {}
     for page in pages:
@@ -185,12 +195,14 @@ def evaluate_qualification(
             if NEGATIVE.search(source)
         ]
     faqs, conflicts = verified_faqs(pages, sources)
-    if conflicts:
+    heavy = heavy_conflict(faqs, conflicts)
+    if heavy:
         blockers.append("contradictory_faq_answers")
-    if len(faqs) >= 5 and not conflicts:
+    if len(faqs) >= 5 and not heavy:
+        excluded = f"; {len(conflicts)} conflicting excluded" if conflicts else ""
         criteria["five_faqs"] = Criterion(
             points=25,
-            reason=f"{len(faqs)} distinct sourced FAQ pairs",
+            reason=f"{len(faqs)} distinct sourced FAQ pairs{excluded}",
             evidence=[Evidence(claim=q.question, quote=q.question, url=q.source_url) for q in faqs],
         )
     else:
@@ -282,7 +294,7 @@ def evaluate_qualification(
 
     grounded = [f for f in faqs if _safe_slot(f.question) and _safe_slot(f.answer)]
     grounding_ready = (
-        len(grounded) >= 2 and not conflicts and any(len(f.answer) <= 700 for f in grounded)
+        len(grounded) >= 2 and not heavy and any(len(f.answer) <= 700 for f in grounded)
     )
     if not grounding_ready:
         blockers.append("grounded_personalization_required")
