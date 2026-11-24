@@ -86,3 +86,59 @@ def test_search_breadth_defaults():
     assert all("{niche}" in t for t in QUERY_TEMPLATES)
     assert not any("workshop" in t for t in QUERY_TEMPLATES)  # in-person noise
     assert {"instagram.com", "reddit.com", "eventbrite.com"} <= set(BLOCKED_DOMAINS)
+
+
+def test_truncated_duplicate_faq_is_not_a_contradiction():
+    from agent.qualify import verified_faqs
+    from agent.web_models import FAQ, PageData
+
+    short = PageData(
+        url="https://a.com/",
+        text="Do I need supplies? A basic set works.",
+        faqs=[
+            FAQ(
+                question="Do I need supplies?",
+                answer="A basic set works.",
+                source_url="https://a.com/",
+            )
+        ],
+    )
+    full = PageData(
+        url="https://a.com/faq",
+        text="Do I need supplies? A basic set works. Three brushes and cotton paper.",
+        faqs=[
+            FAQ(
+                question="Do I need supplies?",
+                answer="A basic set works. Three brushes and cotton paper.",
+                source_url="https://a.com/faq",
+            )
+        ],
+    )
+    faqs, conflicts = verified_faqs([short, full], {p.url: p.text for p in (short, full)})
+    assert conflicts == [] and faqs[0].answer.endswith("cotton paper.")
+
+    other = PageData(
+        url="https://a.com/help",
+        text="Do I need supplies? No, everything is included.",
+        faqs=[
+            FAQ(
+                question="Do I need supplies?",
+                answer="No, everything is included.",
+                source_url="https://a.com/help",
+            )
+        ],
+    )
+    pages = [short, full, other]
+    faqs, conflicts = verified_faqs(pages, {p.url: p.text for p in pages})
+    assert conflicts == ["do i need supplies?"] and faqs == []
+
+
+def test_job_boards_and_news_sites_are_excluded_but_hosted_creators_are_not():
+    from agent.config import Settings
+    from agent.search import excluded_domain
+
+    settings = Settings()
+    assert excluded_domain("ca.indeed.com", settings)
+    assert excluded_domain("businessinsider.com", settings)
+    assert not excluded_domain("michele.thinkific.com", settings)
+    assert excluded_domain("thinkific.com", settings)

@@ -46,6 +46,21 @@ BLOCKED_DOMAINS = (
     "linkedin.com",
     "eventbrite.com",
     "classcentral.com",
+    # Job boards, news and listicle publishers rank for "online course" queries but
+    # are never independent course creators.
+    "indeed.com",
+    "glassdoor.com",
+    "businessinsider.com",
+    "forbes.com",
+    "nytimes.com",
+    "theguardian.com",
+    "wikihow.com",
+    "wikipedia.org",
+    "thesprucecrafts.com",
+    "creativebloq.com",
+    "artistsnetwork.com",
+    "craftsy.com",
+    "bluprint.com",
 )
 
 

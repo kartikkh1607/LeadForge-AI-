@@ -99,10 +99,19 @@ def verified_faqs(pages: list[PageData], sources: dict[str, str]) -> tuple[list[
                 and quoted(faq.answer, faq.source_url, sources)
             ):
                 grouped.setdefault(normalized_text(faq.question), []).append(faq)
-    conflicts = [
-        q for q, values in grouped.items() if len({normalized_text(v.answer) for v in values}) > 1
-    ]
-    return [values[0] for q, values in grouped.items() if q not in conflicts], conflicts
+    conflicts = []
+    chosen = []
+    for q, values in grouped.items():
+        answers = sorted({normalized_text(v.answer) for v in values}, key=len)
+        longest = answers[-1]
+        # The same FAQ captured on two pages, one answer cut shorter (e.g. an accordion
+        # teaser vs the full FAQ page), is not a contradiction: every answer must be
+        # contained in the longest one. Genuinely different answers still conflict.
+        if all(a in longest for a in answers):
+            chosen.append(next(v for v in values if normalized_text(v.answer) == longest))
+        else:
+            conflicts.append(q)
+    return chosen, conflicts
 
 
 def evaluate_qualification(
