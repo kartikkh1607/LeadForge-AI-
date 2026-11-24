@@ -68,7 +68,7 @@ uv run python -m agent.pipeline_cli summary
 ## Tests
 
 ```bash
-uv run pytest -q        # 439 tests, no network access
+uv run pytest -q        # 441 tests, no network access
 uv run ruff check .
 ```
 
