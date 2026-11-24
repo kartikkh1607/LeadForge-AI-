@@ -5,7 +5,7 @@ import pytest
 
 from agent.config import Settings
 from agent.models import Lead, Suppression
-from agent.search import SearchClient, SearchError, discover
+from agent.search import QUERY_TEMPLATES, SearchClient, SearchError, discover
 
 
 @pytest.mark.parametrize(
@@ -45,7 +45,7 @@ def test_provider_requests_and_discovery(db, provider, field, url_key):
         Settings(search_provider=provider, search_api_key="fake-test-key"),
         httpx.MockTransport(handler),
     )
-    result = discover(db, client, "watercolor")
+    result = discover(db, client, "watercolor", QUERY_TEMPLATES[:3])
     assert len(requests) == 3
     assert result.added == 1 and result.duplicates == 8 and result.skipped == 12
     lead = db.get_lead(result.lead_ids[0])

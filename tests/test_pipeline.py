@@ -8,6 +8,7 @@ from agent.models import Lead, Suppression
 from agent.operations import ActionError, mutation_lock
 from agent.pipeline import Pipeline, RunConfig, create_run, retry_run, run_snapshot
 from agent.scrape import extract_page
+from agent.search import QUERY_TEMPLATES
 from agent.verify import VerificationResult
 from agent.web_models import CrawlResult, SearchHit
 
@@ -59,9 +60,12 @@ def test_pipeline_persists_progress_and_stops_at_human_review(db):
     assert db.get_compliance(lead.id) is None
     assert snapshot["steps"][-1]["status"] == "blocked"
     assert not db.connection.execute("SELECT 1 FROM messages").fetchone()
-    assert len(calls["search"]) == 3 and len(calls["scrape"]) == len(calls["verify"]) == 1
+    assert (
+        len(calls["search"]) == len(QUERY_TEMPLATES)
+        and len(calls["scrape"]) == len(calls["verify"]) == 1
+    )
     pipeline.run(run_id)
-    assert len(calls["search"]) == 3
+    assert len(calls["search"]) == len(QUERY_TEMPLATES)
     assert create_run(db, RunConfig(niche="watercolor"), "request") == run_id
     with pytest.raises(ActionError):
         create_run(db, RunConfig(niche="other"), "request")
@@ -150,7 +154,7 @@ def test_new_suppression_between_stages_blocks_network(db):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("query_count", 4),
+        ("query_count", len(QUERY_TEMPLATES) + 1),
         ("max_businesses", 31),
         ("max_pages", 9),
         ("results_per_query", 21),
@@ -191,11 +195,9 @@ def test_business_budget_limits_persistence_and_skips_extra_queries(db):
     snapshot = pipeline.run(run_id)
     assert len(snapshot["lead_ids"]) == 2
     assert db.connection.execute("SELECT count(*) FROM leads").fetchone()[0] == 2
-    assert [s["status"] for s in snapshot["steps"] if s["stage"] == "search"] == [
-        "done",
-        "skipped",
-        "skipped",
-    ]
+    assert [s["status"] for s in snapshot["steps"] if s["stage"] == "search"] == ["done"] + [
+        "skipped"
+    ] * (len(QUERY_TEMPLATES) - 1)
 
 
 def test_partial_scrape_retains_good_evidence_and_other_stages(db):

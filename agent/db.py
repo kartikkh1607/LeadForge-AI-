@@ -161,12 +161,12 @@ class Database:
         owners = [o.value for p in pages for o in p.owner_names]
         emails = [o.value for p in pages for o in p.emails]
 
-        def rank(email):
-            local = email.split("@")[0].lower()
-            return 1 if local in {"hello", "contact"} else 2 if local in {"support", "info"} else 0
+        from agent.verify import contact_rank
 
         email = lead.email
-        for candidate in sorted(emails, key=rank):
+        for candidate in sorted(emails, key=lambda e: contact_rank(e, lead.domain)):
+            if contact_rank(candidate, lead.domain)[0] == 3:
+                break  # Never adopt a vendor/plugin address as the business contact.
             if email:
                 break
             if (

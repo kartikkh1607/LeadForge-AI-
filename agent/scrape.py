@@ -68,12 +68,6 @@ def clean_text(node: Tag | str) -> str:
     return " ".join((node.get_text(" ", strip=True) if isinstance(node, Tag) else node).split())
 
 
-def email_rank(value: str) -> tuple[int, str]:
-    local = value.split("@", 1)[0].casefold()
-    rank = 1 if local in {"hello", "contact"} else 2 if local in {"support", "info"} else 0
-    return rank, value.casefold()
-
-
 def extract_page(html: str, url: str) -> PageData:
     """Extract explicit HTML observations; JSON-LD FAQ pairs require visible corroboration."""
     try:
@@ -180,7 +174,13 @@ def extract_page(html: str, url: str) -> PageData:
             add_email(deobfuscate_email(match.group(0)), match.group(0), "obfuscated_text")
         except ValueError:
             pass
-    page.emails = sorted(emails.values(), key=lambda item: email_rank(item.value))
+    from agent.verify import contact_rank
+
+    try:
+        site = normalize_domain(url)
+    except ValueError:
+        site = ""
+    page.emails = sorted(emails.values(), key=lambda item: contact_rank(item.value, site))
     page.faqs = faq_pairs(soup, url, page.text, structured)
     page.courses = course_offers(soup, url, structured)
     # Bound the discovery frontier, never impose a minimum FAQ length.
