@@ -32,6 +32,22 @@ https://my-portfolio-azure-nine-26.vercel.app
 P.S. If this isn't useful, just reply "no thanks" and I won't follow up.
 """
 
+FOLLOWUP_TEMPLATE = """Hi {first_name},
+
+Just following up on my note about a small AI assistant for your site, trained only on your own FAQ and course pages. The offer still stands: I'll build a free demo you can test yourself before deciding anything.
+
+Want me to go ahead? A simple "yes" is enough.
+
+Kartik Khandelwal
+AI developer
+https://my-portfolio-azure-nine-26.vercel.app
+
+{postal_address}
+
+P.S. If this isn't useful, just reply "no thanks" and I won't contact you again.
+"""
+FOLLOWUP_WAIT_DAYS = 5
+
 UPGRADE_TEMPLATE = INITIAL_TEMPLATE.replace(
     "I build AI assistants for course creators: a small chat box on your site,",
     "For an assistant upgrade, I build a small chat box for your site,",
@@ -49,6 +65,7 @@ class Settings(BaseModel):
     gmail_client_file: Path = Path("credentials.json")
     postal_address: str = ""
     postal_address_confirmed: bool = False
+    followup_wait_days: int = Field(default=FOLLOWUP_WAIT_DAYS, ge=3, le=30)
     dns_timeout_seconds: float = Field(default=5, gt=0, le=60)
     groq_api_key: SecretStr | None = None
     groq_model: str = Field(default="openai/gpt-oss-120b", min_length=1)

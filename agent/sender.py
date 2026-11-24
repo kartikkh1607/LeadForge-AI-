@@ -1,4 +1,4 @@
-"""Owner-only, one-shot queue. No scheduler, prospect delivery or follow-up sends."""
+"""Owner-only, one-shot queue. No scheduler or prospect delivery; follow-ups are threaded."""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -250,14 +250,24 @@ def send_one(db, message_id, base, transport, explicit_confirmation, clock=utc_n
                 _record(db, row, Outcome("rejected", "pre_dispatch_blocked"), clock())
                 return Outcome("rejected", "pre_dispatch_blocked")
             message = db.get_message(message_id)
-            raw = mime_message(row["account"], row["recipient"], message, row["rfc_message_id"])
+            in_reply_to = thread_id = None
+            if message.kind == "followup":
+                from agent.followups import initial_for
+
+                initial = initial_for(db, message.lead_id)
+                in_reply_to, thread_id = initial.rfc822_message_id, initial.gmail_thread_id
+            raw = mime_message(
+                row["account"], row["recipient"], message, row["rfc_message_id"], in_reply_to
+            )
             db.connection.execute(
                 "UPDATE outbound_queue SET quota_day=? WHERE message_id=?",
                 (day_key(dispatch_time), message_id),
             )
             db.connection.execute("UPDATE messages SET status='sending' WHERE id=?", (message_id,))
             try:
-                result = transport.send(raw)
+                result = (
+                    transport.send(raw, thread_id=thread_id) if thread_id else transport.send(raw)
+                )
             except Exception:  # noqa: BLE001 -- sanitize provider errors; uncertain delivery fails closed
                 result = Outcome("uncertain", "transport_ambiguous")
             _record(db, row, result, clock())

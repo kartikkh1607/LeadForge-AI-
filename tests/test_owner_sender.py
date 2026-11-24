@@ -240,7 +240,8 @@ def test_followup_blocked_and_defaults(db, owner_test):
     assert Settings().dry_run and Settings().paused
     with db.connection:
         db.connection.execute("UPDATE messages SET kind='followup'")
-    with pytest.raises(ActionError, match="followup_not_implemented"):
+    # A message relabelled as a follow-up has no sent initial, so real checks block it.
+    with pytest.raises(ActionError, match="initial_not_sent.*gmail_sync_required.*invalid_draft"):
         dispatch(db, owner_test)
 
 

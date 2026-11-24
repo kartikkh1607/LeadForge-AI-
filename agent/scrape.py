@@ -13,7 +13,33 @@ from agent.safe_http import FetchError, SafeFetcher, public_url, same_site
 from agent.verify import normalize_domain, normalize_email
 from agent.web_models import CrawlResult, Observation, PageData
 
-COMMON_PATHS = ("/faq", "/pages/faq", "/p/faq", "/contact", "/pages/contact", "/about", "/help")
+COMMON_PATHS = (
+    "/faq",
+    "/faqs",
+    "/pages/faq",
+    "/p/faq",
+    "/frequently-asked-questions",
+    "/contact",
+    "/pages/contact",
+    "/about",
+    "/help",
+)
+# Only explicit bracketed/parenthesised "at"/"dot" tokens count; bare words never do.
+OBFUSCATED_EMAIL_RE = re.compile(
+    r"\b([a-zA-Z0-9._%+-]+)\s*[(\[{]\s*at\s*[)\]}]\s*"
+    r"([a-zA-Z0-9-]+(?:\s*(?:[(\[{]\s*dot\s*[)\]}]|\.)\s*[a-zA-Z0-9-]+)+)",
+    re.IGNORECASE,
+)
+
+
+def deobfuscate_email(visible: str) -> str:
+    match = OBFUSCATED_EMAIL_RE.fullmatch(visible.strip())
+    if not match:
+        raise ValueError("Not an explicitly obfuscated email")
+    domain = re.sub(r"\s*(?:[(\[{]\s*dot\s*[)\]}]|\.)\s*", ".", match.group(2), flags=re.IGNORECASE)
+    return f"{match.group(1)}@{domain}"
+
+
 RELEVANT = re.compile(
     r"faq|help|contact|support|courses?|classes|workshop|lessons|pricing|about", re.IGNORECASE
 )
@@ -149,6 +175,11 @@ def extract_page(html: str, url: str) -> PageData:
     page.text = soup.get_text(" ", strip=True)
     for value in EMAIL_RE.findall(page.text):
         add_email(value, value, "text")
+    for match in OBFUSCATED_EMAIL_RE.finditer(page.text):
+        try:
+            add_email(deobfuscate_email(match.group(0)), match.group(0), "obfuscated_text")
+        except ValueError:
+            pass
     page.emails = sorted(emails.values(), key=lambda item: email_rank(item.value))
     page.faqs = faq_pairs(soup, url, page.text, structured)
     page.courses = course_offers(soup, url, structured)

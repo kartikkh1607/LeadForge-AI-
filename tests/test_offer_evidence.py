@@ -91,10 +91,11 @@ def test_source_tampering_invalidates_assembled_offer():
 
 
 def test_existing_audit_never_searches_or_copies_approvals(db, tmp_path):
+    from test_safe_http import fetcher_for, response
+
     from agent.config import Settings
     from agent.models import Suppression
     from scripts.audit_existing import audit
-    from test_safe_http import fetcher_for, response
 
     db.add_lead(Lead(domain="artist.com", website="https://artist.com/course", niche="watercolor"))
     db.add_lead(Lead(domain="blocked.com", website="https://blocked.com/", niche="watercolor"))

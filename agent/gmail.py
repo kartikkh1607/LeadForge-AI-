@@ -106,12 +106,16 @@ class Outcome:
     sent_at: str | None = None
 
 
-def mime_message(account, recipient, message, rfc_id):
+def mime_message(account, recipient, message, rfc_id, in_reply_to=None):
     mail = EmailMessage(policy=policy.SMTP)
     mail["From"] = f"Kartik Khandelwal <{normalize_email(account)}>"
     mail["To"] = normalize_email(recipient)
     mail["Subject"] = message.subject
     mail["Message-ID"] = rfc_id
+    if in_reply_to:
+        # Threads the follow-up under the original in the recipient's mail client.
+        mail["In-Reply-To"] = in_reply_to
+        mail["References"] = in_reply_to
     mail.set_content(message.body)
     return base64.urlsafe_b64encode(mail.as_bytes()).decode("ascii")
 
@@ -138,7 +142,7 @@ class GmailTransport:
                 "Gmail connection check failed; token or permissions unavailable"
             ) from None
 
-    def send(self, raw):
+    def send(self, raw, thread_id=None):
         try:
             mail = BytesParser(policy=policy.SMTP).parsebytes(base64.urlsafe_b64decode(raw))
             recipients = getaddresses(mail.get_all("To", []))
@@ -162,9 +166,10 @@ class GmailTransport:
         except Exception:  # noqa: BLE001 -- sanitize provider errors; uncertain delivery fails closed
             return Outcome("rejected", "invalid_envelope")
         try:
-            response = self.client.post(
-                API + "/messages/send", headers=self.headers, json={"raw": raw}
-            )
+            payload = {"raw": raw}
+            if thread_id:
+                payload["threadId"] = str(thread_id)
+            response = self.client.post(API + "/messages/send", headers=self.headers, json=payload)
             # Only definite client rejections are terminal. Timeouts/5xx/unknowns are uncertain.
             if response.status_code in {400, 401, 403, 404, 413, 429}:
                 return Outcome("rejected", f"http_{response.status_code}")
@@ -177,6 +182,50 @@ class GmailTransport:
             return Outcome("uncertain", f"http_{response.status_code}_ambiguous")
         except Exception:  # noqa: BLE001 -- sanitize provider errors; uncertain delivery fails closed
             return Outcome("uncertain", "transport_ambiguous")
+
+    def thread(self, thread_id):
+        """Read-only thread metadata for reply/bounce sync; never modifies the mailbox."""
+        try:
+            response = self.client.get(
+                API + "/threads/" + str(thread_id),
+                headers=self.headers,
+                params=[
+                    ("format", "metadata"),
+                    *(
+                        ("metadataHeaders", h)
+                        for h in (
+                            "From",
+                            "Subject",
+                            "Auto-Submitted",
+                            "X-Autoreply",
+                            "X-Autorespond",
+                            "Content-Type",
+                            "Message-ID",
+                        )
+                    ),
+                ],
+            )
+            response.raise_for_status()
+            messages = []
+            for item in response.json().get("messages", [])[:100]:
+                headers = {
+                    h["name"].lower(): h["value"]
+                    for h in item.get("payload", {}).get("headers", [])
+                    if isinstance(h, dict) and isinstance(h.get("value"), str)
+                }
+                messages.append(
+                    {
+                        "id": item["id"],
+                        "thread_id": item.get("threadId", thread_id),
+                        "labels": list(item.get("labelIds", [])),
+                        "snippet": str(item.get("snippet", ""))[:500],
+                        "internal_date": int(item.get("internalDate", 0)),
+                        "headers": headers,
+                    }
+                )
+            return messages
+        except Exception:  # noqa: BLE001 -- sanitize provider errors
+            raise GmailError("Gmail thread unavailable; sync skipped this thread") from None
 
     def reconcile(self, rfc_id):
         from datetime import UTC, datetime

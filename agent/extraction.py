@@ -24,10 +24,26 @@ def navigation(node):
 PROMO = re.compile(
     r"^(ready\b|not sure\b|building a\b|that sounds\b|already a customer\b)", re.IGNORECASE
 )
+ACCORDION_TITLE = re.compile(
+    r"(accordion|toggle|tab|faq|collapsible)[-_]{0,2}(title|header|heading|question|trigger)",
+    re.IGNORECASE,
+)
+ACCORDION_CONTENT = re.compile(
+    r"(accordion|toggle|tab|faq|collapsible)[-_]{0,2}(content|body|answer|panel)", re.IGNORECASE
+)
+ACCORDION_ITEM = re.compile(
+    r"(accordion|toggle|faq|collapsible)[-_]{0,2}(item|row|entry)?", re.IGNORECASE
+)
 TOPIC = re.compile(
     r"\b(course|class|lesson|video|access|enrol|enroll|refund|supplies|start|help|login|download|materials|beginner|experience|payment)\w*\b",
     re.IGNORECASE,
 )
+
+
+def unique_nodes(nodes):
+    """De-duplicate by identity; bs4 Tag equality compares content, not position."""
+    seen = set()
+    return [n for n in nodes if not (id(n) in seen or seen.add(id(n)))]
 
 
 def faq_pairs(soup, url, visible, structured):
@@ -83,9 +99,22 @@ def faq_pairs(soup, url, visible, structured):
         if summary and not navigation(details):
             q = text(summary)
             add(q, text(details).removeprefix(q).strip())
-    for question in soup.find_all(["h2", "h3", "h4", "dt", "button", "strong", "p"]):
+    tag_questions = soup.find_all(["h2", "h3", "h4", "dt", "button", "strong", "p"])
+    # Accordion widgets (Elementor, Divi, Kadence, Shopify themes) mark titles by class.
+    widget_questions = soup.find_all(class_=ACCORDION_TITLE)
+    widget_ids = {id(n) for n in widget_questions}
+    for question in unique_nodes([*tag_questions, *widget_questions]):
         q = text(question)
-        if navigation(question) or question.find("a") or not q.endswith("?"):
+        widget = id(question) in widget_ids
+        if navigation(question) or not q.endswith("?"):
+            continue
+        if widget:
+            # Toggle anchors point at the same page; a real outbound link is not a question.
+            if any(not str(a.get("href", "#")).startswith("#") for a in question.find_all("a")):
+                continue
+            if question.name == "a" and not str(question.get("href", "#")).startswith("#"):
+                continue
+        elif question.find("a"):
             continue
         explicit = any(
             re.search(
@@ -100,6 +129,7 @@ def faq_pairs(soup, url, visible, structured):
                 re.compile("^h[1-6]$"), string=re.compile(r"FAQ|frequently asked", re.IGNORECASE)
             )
         )
+        explicit = explicit or widget
         if not explicit and not TOPIC.search(q):
             continue
         target = question.get("aria-controls")
@@ -107,18 +137,33 @@ def faq_pairs(soup, url, visible, structured):
         if answer is None and question.parent.name in {"h2", "h3", "h4", "div", "dt"}:
             answer = question.parent.find_next_sibling()
         if (
+            answer is not None
+            and answer.get("class")
+            and ACCORDION_TITLE.search(" ".join(answer.get("class", [])))
+        ):
+            answer = None
+        if answer is None and widget:
+            content = question.find_parent(class_=ACCORDION_ITEM)
+            answer = content.find(class_=ACCORDION_CONTENT) if content else None
+        if (
             answer
             and answer.name in {"p", "div", "dd", "ul", "ol", "section"}
             and not navigation(answer)
         ):
             chunks = []
+            # A heading/paragraph question may be answered by an intro plus a list or more
+            # paragraphs; collection still stops at the next question, heading or promo.
             nodes = (
                 [answer]
-                if target or not explicit
-                else [answer, *answer.find_next_siblings(limit=20)]
+                if target or widget
+                else [answer, *answer.find_next_siblings(limit=20 if explicit else 3)]
             )
-            for part in nodes:
+            for index, part in enumerate(nodes):
                 if part.name not in {"p", "div", "dd", "ul", "ol"} or navigation(part):
+                    break
+                # Outside an explicit FAQ section, only a list directly continuing the
+                # answer is joined; following paragraphs may be unrelated page copy.
+                if index and not explicit and part.name not in {"ul", "ol"}:
                     break
                 value = text(part)
                 if (

@@ -177,11 +177,20 @@ def evaluate_qualification(
                     )
                 except ValueError:
                     supported = False
+            elif email.method == "obfuscated_text":
+                from agent.scrape import deobfuscate_email
+
+                try:
+                    supported = quoted(email.quote, page.url, sources) and (
+                        deobfuscate_email(email.quote).casefold() == email.value.casefold()
+                    )
+                except ValueError:
+                    supported = False
             if (
                 lead.email
                 and email.value.casefold() == lead.email.casefold()
                 and email.source_url == page.url
-                and email.method in {"text", "mailto", "cloudflare"}
+                and email.method in {"text", "mailto", "cloudflare", "obfuscated_text"}
                 and supported
                 and lead.email_status not in {"invalid", "bounced"}
                 and not suppressed

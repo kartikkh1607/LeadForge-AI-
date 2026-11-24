@@ -339,3 +339,23 @@ def selected_slots(context, hook_index, q1_index, q2_index, name_index=0):
         q2=q2["question"],
         evidence=[Evidence(claim=text, quote=text, url=url) for text, url in pairs],
     ).model_dump(mode="json")
+
+
+def pipeline_view(db, settings):
+    """Read-only Phase 6/7 data for the Tracker page."""
+    from agent.conversions import summary
+    from agent.followups import due_followups
+    from agent.gmail_sync import inbound_rows
+
+    return {
+        "summary": summary(db),
+        "inbound": inbound_rows(db),
+        "followups": due_followups(db, settings),
+        "conversions": [
+            dict(r)
+            for r in db.connection.execute(
+                "SELECT lead_id,stage,note,value_usd,recorded_at FROM conversion_events "
+                "ORDER BY recorded_at DESC"
+            )
+        ],
+    }
