@@ -1,4 +1,10 @@
-"""Explicit, interactive owner-test CLI and read-only Gmail sync. Default: offline diagnostics."""
+"""Explicit, interactive owner-test CLI, read-only Gmail sync and sent-mail import.
+
+Default: offline diagnostics.
+  python -m agent.send_worker import-sent            # record emails sent from Gmail
+  python -m agent.send_worker import-sent --subject ""   # every sent email, last 180 days
+  python -m agent.send_worker sync                   # pull replies, bounces, opt-outs
+"""
 
 import argparse
 import sys
@@ -32,7 +38,9 @@ def connection_status(db, account, status):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "command",
         choices=[
@@ -44,11 +52,18 @@ def main():
             "send-owner-test",
             "reconcile",
             "sync",
+            "import-sent",
         ],
         nargs="?",
         default="diagnose",
     )
     parser.add_argument("--message-id", type=int)
+    parser.add_argument(
+        "--subject",
+        default="quick idea",
+        help="import-sent: only sent emails whose subject contains this ('' for all)",
+    )
+    parser.add_argument("--days", type=int, default=180, help="import-sent: look-back window")
     args = parser.parse_args()
     base = load_settings()
     with Database(base.database_path) as db:
@@ -121,6 +136,15 @@ def main():
                     print(send_one(db, args.message_id, base, transport, consent))
                 elif args.command == "check":
                     print("Gmail connection verified; no email sent")
+                elif args.command == "import-sent":
+                    from agent.gmail_import import import_sent
+
+                    report = import_sent(
+                        db, transport, settings.gmail_account, subject=args.subject, days=args.days
+                    )
+                    print(report.summary())
+                    for email in report.unmatched:
+                        print("  not in LeadForge:", email)
                 elif args.command == "sync":
                     from agent.gmail_sync import sync
 
