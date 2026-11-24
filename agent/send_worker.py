@@ -1,4 +1,4 @@
-"""Explicit, interactive owner-test CLI. Default command is offline diagnostics."""
+"""Explicit, interactive owner-test CLI and read-only Gmail sync. Default: offline diagnostics."""
 
 import argparse
 import sys
@@ -43,6 +43,7 @@ def main():
             "enqueue",
             "send-owner-test",
             "reconcile",
+            "sync",
         ],
         nargs="?",
         default="diagnose",
@@ -120,6 +121,24 @@ def main():
                     print(send_one(db, args.message_id, base, transport, consent))
                 elif args.command == "check":
                     print("Gmail connection verified; no email sent")
+                elif args.command == "sync":
+                    from agent.gmail_sync import sync
+
+                    report = sync(db, transport, settings.gmail_account)
+                    print(
+                        f"Checked {report.threads_checked} threads; recorded "
+                        f"{len(report.events)} new events "
+                        + ", ".join(
+                            f"{k}={report.count(k)}"
+                            for k in ("reply", "opt_out", "bounce_hard", "spam_block", "auto_reply")
+                        )
+                        + (
+                            f"; skipped {len(report.skipped_threads)}"
+                            if report.skipped_threads
+                            else ""
+                        )
+                        + ". Read-only; nothing sent."
+                    )
             finally:
                 transport.close()
         except GmailError as exc:

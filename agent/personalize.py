@@ -299,8 +299,14 @@ def validate_managed_message(db: "Database", message: Message) -> None:
     envelope = message.personalization
     if not envelope:
         raise PersonalizationError("Validated personalization envelope required")
-    if message.kind != "initial":
-        raise PersonalizationError("Follow-up personalization is not implemented")
+    if message.kind == "followup":
+        from agent.followups import FollowupError, validate_followup
+
+        try:
+            validate_followup(db, message)
+        except FollowupError as exc:
+            raise PersonalizationError(str(exc)) from exc
+        return
     try:
         if envelope["template_version"] != 1 or envelope["context_hash"] != context_hash(
             db, message.lead_id

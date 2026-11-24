@@ -5,7 +5,7 @@ import uuid
 import streamlit as st
 
 from agent.config import load_settings
-from agent.dashboard import Dashboard, selected_slots
+from agent.dashboard import Dashboard, pipeline_view, selected_slots
 from agent.db import Database
 from agent.models import LeadStage
 from agent.operations import ActionError, fingerprint
@@ -473,10 +473,37 @@ def show_tracker(service):
             descending=descending,
         )
     )
+    show_pipeline(service)
     st.subheader("Suppression records")
     table(service.suppressions())
     st.subheader("Discovery history")
     table(service.history())
+
+
+def show_pipeline(service):
+    view = pipeline_view(service.db, service.settings)
+    stats = view["summary"]
+    st.subheader("Outreach pipeline")
+    st.caption(
+        "Recorded facts only. Run `python -m agent.send_worker sync` to pull replies and "
+        "bounces (read-only)."
+    )
+    a, b, c, d = st.columns(4)
+    a.metric("Contacted", stats["contacted"])
+    b.metric("Bounced", stats["bounced"])
+    c.metric("Replied", stats["replied"])
+    d.metric("Reply rate", f"{stats['reply_rate']:.0%}")
+    a, b, c, d = st.columns(4)
+    a.metric("Interested", stats["interested"])
+    b.metric("Demos sent", stats["demo_sent"])
+    c.metric("Won", stats["won"])
+    d.metric("Revenue (USD)", f"{stats['revenue_usd']:,.0f}")
+    st.subheader("Inbound replies, bounces and opt-outs")
+    table(view["inbound"])
+    st.subheader("Follow-up eligibility")
+    table(view["followups"])
+    st.subheader("Conversion history")
+    table(view["conversions"])
 
 
 def show_settings(service):
@@ -568,7 +595,7 @@ def main():
         "Workspace", ["Discover", "Review", "Send (preview only)", "Tracker", "Settings"]
     )
     st.sidebar.divider()
-    st.sidebar.info("Phase 5A · Owner tests only\n\nNo sending from this dashboard.")
+    st.sidebar.info("Phase 7 · Owner tests only\n\nNo sending from this dashboard.")
     if "notice" in st.session_state:
         level, message = st.session_state.pop("notice")
         getattr(st, level)(message)

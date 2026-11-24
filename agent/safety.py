@@ -60,8 +60,10 @@ def check_send_eligibility(
     if message.kind == "initial" and lead.stage != "qualified":
         blockers.append("lead_not_qualified")
     if message.kind == "followup":
-        # Follow-up timing, thread headers and reply sync are not implemented yet.
-        blockers.append("followup_not_implemented")
+        from agent.followups import followup_blockers
+
+        # Fresh timing, reply/bounce/opt-out and recent-sync checks on every preflight.
+        blockers.extend(followup_blockers(db, lead.id, settings))
     if not draft_evidence_matches(message, db.sources(lead.id)):
         blockers.append("evidence_failed")
     try:
