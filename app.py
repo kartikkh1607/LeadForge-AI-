@@ -10,6 +10,7 @@ from agent.db import Database
 from agent.models import LeadStage
 from agent.operations import ActionError, fingerprint
 from agent.pipeline import Pipeline, RunConfig, create_run, retry_run, run_snapshot
+from agent.search import QUERY_TEMPLATES
 from agent.settings_store import preferences_for, save_preferences
 
 
@@ -63,10 +64,10 @@ def show_discover(service):
             index=["tavily", "serper"].index(settings.search_provider),
         )
         results = b.number_input("Results per query", 1, 20, settings.search_results_per_query)
-        queries = c.number_input("Search queries", 1, 3, 3)
+        queries = c.number_input("Search queries", 1, len(QUERY_TEMPLATES), len(QUERY_TEMPLATES))
         a, b = st.columns(2)
-        businesses = a.number_input("Maximum businesses", 1, 30, 10)
-        pages = b.number_input("Pages per business", 1, 8, 4)
+        businesses = a.number_input("Maximum businesses", 1, 30, 20)
+        pages = b.number_input("Pages per business", 1, 8, 8)
         st.caption(
             "Starting makes search, public website and DNS requests. Compliance review and drafting remain explicit steps."
         )

@@ -23,6 +23,42 @@ WEIGHTS = {
     "recent_activity": 15,
 }
 THRESHOLD = 60
+NICHE_FILLER = frozenset(
+    {
+        "course",
+        "courses",
+        "online",
+        "learn",
+        "learning",
+        "class",
+        "classes",
+        "lesson",
+        "lessons",
+        "workshop",
+        "workshops",
+        "program",
+        "programs",
+        "programme",
+        "training",
+        "school",
+        "professional",
+        "beginner",
+        "beginners",
+        "advanced",
+        "intermediate",
+        "art",
+        "arts",
+        "the",
+        "a",
+        "an",
+        "and",
+        "for",
+        "of",
+        "to",
+        "in",
+        "with",
+    }
+)
 SUPPORT = re.compile(
     r"\b(support|enroll\w*|enrol\w*|log\s?in|access|help|assistance|refund)\b", re.IGNORECASE
 )
@@ -81,17 +117,22 @@ def evaluate_qualification(
     blockers = []
     text = " ".join(sources.values())
     negative = bool(NEGATIVE.search(text))
-    terms = set(re.findall(r"\w+", lead.niche.casefold())) - {
+    terms = set(re.findall(r"\w+", lead.niche.casefold())) - NICHE_FILLER
+    # Multi-word niches ("professional coaching") still need their core subject word;
+    # modifiers like "professional" or "beginner" rarely appear in a course's own copy.
+    terms = terms or set(re.findall(r"\w+", lead.niche.casefold())) - {
         "course",
         "courses",
         "online",
-        "learn",
-        "learning",
-        "class",
         "the",
         "a",
+        "an",
         "and",
         "for",
+        "of",
+        "to",
+        "in",
+        "with",
     }
     course_evidence = []
     relevant_business = False

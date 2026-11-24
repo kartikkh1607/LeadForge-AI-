@@ -13,10 +13,15 @@ from agent.safe_http import FetchError, public_url
 from agent.verify import normalize_domain
 from agent.web_models import DiscoveryResult, SearchHit
 
+# Ordered best-first: a run with query_count=N uses the first N. Each targets an
+# independent creator's own sales/FAQ page rather than marketplaces or blogs.
 QUERY_TEMPLATES = (
-    '{niche} "online" "FAQ"',
-    '{niche} "self-paced" "enroll"',
-    '{niche} "workshop" "artist"',
+    '{niche} online course "frequently asked questions"',
+    '{niche} "self-paced" course "enroll"',
+    '{niche} online course "lifetime access" FAQ',
+    '{niche} "online class" "how long do I have access"',
+    '{niche} membership "online lessons" FAQ',
+    '{niche} course "taught by" "enroll now"',
 )
 BLOCKED_DOMAINS = (
     "udemy.com",
@@ -33,6 +38,14 @@ BLOCKED_DOMAINS = (
     "amazon.in",
     "amazon.ca",
     "amazon.com.au",
+    "instagram.com",
+    "pinterest.com",
+    "reddit.com",
+    "quora.com",
+    "medium.com",
+    "linkedin.com",
+    "eventbrite.com",
+    "classcentral.com",
 )
 
 

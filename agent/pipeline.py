@@ -22,10 +22,11 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     niche: str = Field(min_length=1, max_length=200)
     provider: Literal["tavily", "serper"] = "tavily"
-    results_per_query: int = Field(default=5, ge=1, le=20)
-    query_count: int = Field(default=3, ge=1, le=3)
-    max_businesses: int = Field(default=10, ge=1, le=30)
-    max_pages: int = Field(default=4, ge=1, le=8)
+    results_per_query: int = Field(default=10, ge=1, le=20)
+    query_count: int = Field(default=len(QUERY_TEMPLATES), ge=1, le=len(QUERY_TEMPLATES))
+    max_businesses: int = Field(default=20, ge=1, le=30)
+    # FAQ, contact and course pages are usually separate; 4 pages often missed one.
+    max_pages: int = Field(default=8, ge=1, le=8)
 
     @field_validator("niche")
     @classmethod

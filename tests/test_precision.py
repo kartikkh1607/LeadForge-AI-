@@ -10,7 +10,7 @@ from agent.models import Lead
 from agent.qualify import evaluate_qualification
 from agent.safe_http import CrawlLimits
 from agent.scrape import crawl_lead, extract_page
-from agent.search import discover, excluded_domain
+from agent.search import QUERY_TEMPLATES, discover, excluded_domain
 from agent.verify import normalize_domain
 from agent.web_models import SearchHit
 
@@ -103,8 +103,8 @@ def test_all_search_occurrences_survive_historical_deduplication(db):
                 SearchHit(url="https://michele.thinkific.com/course", query=query),
             ]
 
-    first = discover(db, Search(), "watercolor")
-    second = discover(db, Search(), "watercolor")
+    first = discover(db, Search(), "watercolor", QUERY_TEMPLATES[:3])
+    second = discover(db, Search(), "watercolor", QUERY_TEMPLATES[:3])
     assert first.added == 2 and second.added == 0
     rows = db.connection.execute("SELECT * FROM search_observations").fetchall()
     assert len(rows) == 18 and len({r["query"] for r in rows}) == 3

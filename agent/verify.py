@@ -92,3 +92,60 @@ def verify_email(
         return VerificationResult("invalid", "Domain does not exist")
     except (dns.exception.DNSException, OSError) as exc:
         return VerificationResult(None, f"DNS lookup incomplete: {type(exc).__name__}", True)
+
+
+FREE_MAIL = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "yahoo.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "icloud.com",
+        "me.com",
+        "aol.com",
+        "proton.me",
+        "protonmail.com",
+        "zoho.com",
+        "gmx.com",
+    }
+)
+# Vendors whose addresses appear in embeds, legal boilerplate or theme credits.
+VENDOR_MAIL = (
+    "squarespace.com",
+    "shopify.com",
+    "wordpress.com",
+    "wordpress.org",
+    "wpengine.com",
+    "godaddy.com",
+    "mailchimp.com",
+    "convertkit.com",
+    "kit.com",
+    "stripe.com",
+    "paypal.com",
+    "elementor.com",
+    "w3.org",
+    "schema.org",
+    "gravatar.com",
+)
+
+
+def contact_rank(email: str, site_domain: str) -> tuple[int, int, str]:
+    """Lower is better: the business's own domain, then a personal mailbox, then others.
+
+    Within a tier a named person (jane@) beats hello/contact, which beats support/info.
+    Vendor addresses rank last so they are only ever chosen if nothing else exists.
+    """
+    local, _, domain = email.casefold().partition("@")
+    site = site_domain.casefold()
+    if any(domain == v or domain.endswith("." + v) for v in VENDOR_MAIL):
+        tier = 3
+    elif domain == site or domain.endswith("." + site) or site.endswith("." + domain):
+        tier = 0
+    elif domain in FREE_MAIL:
+        tier = 1
+    else:
+        tier = 2
+    role = 1 if local in {"hello", "contact"} else 2 if local in {"support", "info"} else 0
+    return tier, role, email.casefold()
