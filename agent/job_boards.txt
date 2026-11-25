@@ -1,0 +1,57 @@
+# Company job boards LeadForge checks for intern / entry-level roles.
+# One per line: "ats:slug", a board URL (jobs.ashbyhq.com/x, jobs.lever.co/x,
+# boards.greenhouse.io/x) or a bare slug (all three are tried). Lines starting
+# with # are ignored. All verified live on 2026-11-25 unless noted.
+
+# AI / LLM startups and dev tools (Ashby)
+ashby:langchain
+ashby:llamaindex
+ashby:pinecone
+ashby:weaviate
+ashby:zilliz
+ashby:cohere
+ashby:perplexity
+ashby:elevenlabs
+ashby:deepgram
+ashby:cartesia
+ashby:baseten
+ashby:modal
+ashby:anyscale
+ashby:fireworks
+ashby:togetherai
+ashby:vapi
+ashby:synthesia
+ashby:runway
+ashby:pika
+ashby:poolside
+ashby:writer
+ashby:letta
+ashby:mem0
+ashby:exa
+ashby:firecrawl
+ashby:e2b
+ashby:composio
+ashby:dust
+ashby:unstructured
+ashby:nomic
+ashby:relevanceai
+ashby:sierra
+ashby:cursor
+ashby:replit
+ashby:speechmatics
+ashby:granola
+ashby:fathom
+
+# Data / infra / product companies (Ashby)
+ashby:prefect
+ashby:airbyte
+ashby:posthog
+ashby:supabase
+ashby:neon
+ashby:n8n
+ashby:zapier
+ashby:attio
+
+# India-based or India-hiring AI companies
+ashby:sarvam
+ashby:atlan

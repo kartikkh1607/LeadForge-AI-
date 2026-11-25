@@ -306,7 +306,7 @@ def add_boards(db, lines) -> list[str]:
 
 
 def seed_boards(db, path: Path | None = None) -> list[str]:
-    path = path or Path(__file__).resolve().parent.parent / "data" / "job_boards.txt"
+    path = path or Path(__file__).with_name("job_boards.txt")
     if not path.exists():
         return []
     return add_boards(db, path.read_text(encoding="utf-8").splitlines())

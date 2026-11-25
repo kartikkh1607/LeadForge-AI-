@@ -196,3 +196,14 @@ def test_seed_file_parses(db):
     added = jobs.seed_boards(db)
     assert len(added) >= 40 and "ashby:langchain" in added
     assert jobs.seed_boards(db) == []
+
+
+def test_seed_file_is_committed_with_the_package():
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "agent/job_boards.txt"],
+        capture_output=True,
+        check=False,
+    )
+    assert tracked.returncode == 0, "seed list must be tracked by git, not in ignored data/"

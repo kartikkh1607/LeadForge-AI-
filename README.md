@@ -84,7 +84,7 @@ API key), and ranks every open role out of 100:
   US-only remote and onsite-abroad score low
 - **skills (25)**: overlap between the posting and your skills (Python, LLMs, RAG, LangChain…)
 
-Start from `data/job_boards.txt` (about 50 AI and dev-tool startups), add companies on the
+Start from `agent/job_boards.txt` (about 50 AI and dev-tool startups), add companies on the
 page (`ashby:company`, a `jobs.lever.co/...` link, or `boards.greenhouse.io/...`), click
 **Refresh all job boards**, then mark roles shortlisted / applied / emailed / interview.
 Roles found elsewhere (Wellfound, LinkedIn, referrals) can be added by hand. It never applies
