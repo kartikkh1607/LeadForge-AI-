@@ -550,6 +550,133 @@ def show_pipeline(service):
     table(view["conversions"])
 
 
+def show_jobs(service):
+    from agent import jobs
+
+    db = service.db
+    st.title("Jobs")
+    st.caption(
+        "Internships and entry-level roles from companies' own public job boards (Greenhouse, "
+        "Lever, Ashby), ranked for someone applying from India. Read-only: nothing is applied "
+        "for or emailed."
+    )
+    if not jobs.boards(db):
+        jobs.seed_boards(db)
+    board_rows = jobs.boards(db)
+    a, b, c = st.columns(3)
+    a.metric("Company boards", len(board_rows))
+    b.metric(
+        "Open roles tracked",
+        db.connection.execute(
+            "SELECT count(*) FROM job_postings WHERE status!='closed'"
+        ).fetchone()[0],
+    )
+    c.metric(
+        "Shortlisted",
+        db.connection.execute(
+            "SELECT count(*) FROM job_postings WHERE status='shortlisted'"
+        ).fetchone()[0],
+    )
+    if st.button(
+        "Refresh all job boards",
+        type="primary",
+        help="Fetches every board's open roles. Takes about a minute for 50 boards.",
+    ):
+
+        def run_refresh():
+            with st.spinner("Reading job boards…"):
+                st.session_state["jobs_summary"] = jobs.refresh(db).summary()
+
+        perform("jobs_refresh", run_refresh, success="Job boards refreshed.")
+    if "jobs_summary" in st.session_state:
+        st.info(st.session_state["jobs_summary"])
+
+    a, b, c, d = st.columns(4)
+    levels = a.multiselect(
+        "Level", ["intern", "entry", "mid", "senior", "unknown"], ["intern", "entry"]
+    )
+    eligible = b.multiselect(
+        "Can I apply from India?",
+        [
+            "remote_global",
+            "remote_india",
+            "india_onsite",
+            "remote_restricted",
+            "onsite_abroad",
+            "unknown",
+        ],
+        ["remote_global", "remote_india", "india_onsite"],
+    )
+    statuses = c.multiselect(
+        "Status", list(jobs.STATUSES), ["new", "shortlisted", "applied", "emailed", "interview"]
+    )
+    score = d.number_input("Minimum score", 0, 100, 0)
+    query = st.text_input("Search title, company or description", "")
+    rows = jobs.postings(
+        db,
+        levels=levels,
+        eligibility=eligible,
+        min_score=int(score),
+        statuses=statuses,
+        query=query.strip(),
+    )
+    st.caption(
+        f"{len(rows)} roles match. Score = level fit (40) + where you can work from "
+        "(35) + overlap with your skills (25)."
+    )
+    table(rows)
+
+    with st.expander("Update a role's status"), st.form("job_status"):
+        job_id = st.number_input("Role id (from the table)", 1, step=1)
+        status = st.selectbox("Status", list(jobs.STATUSES), index=1)
+        note = st.text_input("Note (optional)", max_chars=1000)
+        if st.form_submit_button("Save status"):
+            perform("job_status", lambda: jobs.set_status(db, int(job_id), status, note))
+
+    with (
+        st.expander("Add a role found elsewhere (Wellfound, LinkedIn, referrals)"),
+        st.form("job_manual"),
+    ):
+        company = st.text_input("Company")
+        title = st.text_input("Role title")
+        url = st.text_input("Link (https://…)")
+        location = st.text_input("Location", placeholder="Remote · Everywhere")
+        remote = st.checkbox("Remote")
+        note = st.text_input("Note (optional)", max_chars=1000)
+        if st.form_submit_button("Add role"):
+            perform(
+                "job_manual",
+                lambda: jobs.add_manual(
+                    db,
+                    company=company,
+                    title=title,
+                    url=url,
+                    location=location,
+                    remote=remote,
+                    note=note,
+                ),
+            )
+
+    with st.expander(f"Company boards ({len(board_rows)})"):
+        table(
+            [
+                {k: r[k] for k in ("ats", "slug", "last_status", "last_fetched_at")}
+                for r in board_rows
+            ]
+        )
+        with st.form("job_boards"):
+            text = st.text_area(
+                "Add boards, one per line",
+                placeholder="ashby:cohere\nhttps://jobs.lever.co/company\nboards.greenhouse.io/company",
+            )
+            if st.form_submit_button("Add boards"):
+                perform(
+                    "job_boards",
+                    lambda: jobs.add_boards(db, text.splitlines()),
+                    success="Boards added. Click Refresh to fetch their roles.",
+                )
+
+
 def show_settings(service):
     st.title("Settings")
     settings = service.settings
@@ -636,7 +763,7 @@ def main():
     st.sidebar.title("LeadForge AI")
     st.sidebar.caption("Evidence-led outreach workspace")
     section = st.sidebar.radio(
-        "Workspace", ["Discover", "Review", "Send (preview only)", "Tracker", "Settings"]
+        "Workspace", ["Discover", "Review", "Send (preview only)", "Tracker", "Jobs", "Settings"]
     )
     st.sidebar.divider()
     st.sidebar.info("Phase 7 · Owner tests only\n\nNo sending from this dashboard.")
@@ -653,6 +780,7 @@ def main():
                 "Review": show_review,
                 "Send (preview only)": show_send,
                 "Tracker": show_tracker,
+                "Jobs": show_jobs,
                 "Settings": show_settings,
             }[section](service)
     except Exception:  # noqa: BLE001 -- safe outer UI boundary for configuration/database errors
