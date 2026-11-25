@@ -84,6 +84,13 @@ API key), and ranks every open role out of 100:
   US-only remote and onsite-abroad score low
 - **skills (25)**: overlap between the posting and your skills (Python, LLMs, RAG, LangChain…)
 
+Every role is also tagged by **region** (US, Canada, UK, Europe, Australia, New Zealand,
+India, Singapore, remote-anywhere) and **visa sponsorship** (offered / not offered / unknown,
+read from the description). Onsite roles abroad only score well when they offer sponsorship
+or relocation. **Find companies** searches the web (your search API) for intern / new-grad /
+junior AI and software roles on Ashby, Lever and Greenhouse in the regions you pick and adds
+each company's board automatically.
+
 Start from `agent/job_boards.txt` (about 50 AI and dev-tool startups), add companies on the
 page (`ashby:company`, a `jobs.lever.co/...` link, or `boards.greenhouse.io/...`), click
 **Refresh all job boards**, then mark roles shortlisted / applied / emailed / interview.

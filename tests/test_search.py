@@ -101,3 +101,26 @@ def test_partial_search_failure(db):
         ["{niche} FAQ", "{niche} help"],
     )
     assert result.added == 1 and result.errors == ["tavily: ReadTimeout"]
+
+
+def test_tavily_translates_site_filter_to_include_domains():
+    import json as _json
+
+    import httpx
+
+    from agent.config import Settings
+    from agent.search import SearchClient
+
+    seen = {}
+
+    def handler(request):
+        seen.update(_json.loads(request.content))
+        return httpx.Response(200, json={"results": [{"url": "https://jobs.lever.co/a/1"}]})
+
+    settings = Settings(search_api_key="k", search_provider="tavily")
+    hits = SearchClient(settings, httpx.MockTransport(handler)).search(
+        "AI intern Canada site:jobs.lever.co"
+    )
+    assert seen["query"] == "AI intern Canada"
+    assert seen["include_domains"] == ["jobs.lever.co"]
+    assert hits[0].url == "https://jobs.lever.co/a/1"

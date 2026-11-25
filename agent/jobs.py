@@ -102,6 +102,8 @@ class Posting:
     eligibility: str = "unknown"
     score: int = 0
     reasons: list[str] = field(default_factory=list)
+    regions: list[str] = field(default_factory=list)
+    visa: str = "unknown"
 
 
 def parse_board(text: str) -> tuple[str, str]:
@@ -234,32 +236,89 @@ def eligibility_of(location: str, remote: bool) -> str:
     return "onsite_abroad"
 
 
+REGION_PATTERNS = {
+    "us": r"united states|\bu\.?s\.?a?\b|usa\b|new york|nyc|san francisco|\bsf\b|bay area|"
+    r"seattle|austin|boston|chicago|los angeles|denver|palo alto|mountain view|san mateo|"
+    r"san jose|miami|atlanta|washington|california|texas|massachusetts|colorado|illinois|"
+    r"florida|georgia|virginia|north carolina|utah|oregon|portland|pittsburgh|philadelphia|"
+    r"minneapolis|salt lake|new jersey",
+    "canada": r"canada|toronto|vancouver|montreal|ottawa|calgary|waterloo|\bcan\b",
+    "uk": r"united kingdom|\buk\b|london|manchester|edinburgh|cambridge, uk|oxford|bristol|"
+    r"england|scotland",
+    "europe": r"europe|\beu\b|emea|germany|berlin|munich|hamburg|france|paris|netherlands|"
+    r"amsterdam|ireland|dublin|spain|madrid|barcelona|portugal|lisbon|italy|milan|"
+    r"sweden|stockholm|denmark|copenhagen|norway|oslo|finland|helsinki|poland|warsaw|"
+    r"switzerland|zurich|geneva|austria|vienna|belgium|brussels|czech|prague|estonia|"
+    r"tallinn|serbia|belgrade|romania|greece|athens|hungary|budapest|latvia|lithuania",
+    "australia": r"australia|sydney|melbourne|brisbane|perth|adelaide|canberra",
+    "new_zealand": r"new zealand|auckland|wellington|christchurch",
+    "india": INDIA.pattern,
+    "singapore": r"singapore",
+}
+REGION_RES = {name: re.compile(pattern, re.IGNORECASE) for name, pattern in REGION_PATTERNS.items()}
+REGIONS = tuple(REGION_PATTERNS) + ("remote_global", "other")
+VISA_NO = re.compile(
+    r"(no|not|unable to|cannot|can't|do not|does not|will not|won't)\s+(offer\s+|provide\s+)?"
+    r"(visa\s+)?sponsor|without (visa )?sponsorship|sponsorship (is )?not (available|offered)|"
+    r"must (be|have) (legally )?authori[sz]ed to work",
+    re.IGNORECASE,
+)
+VISA_YES = re.compile(
+    r"visa sponsorship|sponsor (your |a |work )?visa|relocation (support|assistance|package)|"
+    r"we (can |will |do )?sponsor|help(ing)? (you )?relocate|work permit support",
+    re.IGNORECASE,
+)
+
+
+def regions_of(location: str, remote: bool) -> list[str]:
+    found = [name for name, pattern in REGION_RES.items() if pattern.search(location)]
+    cleaned = location.replace("(remote)", "")
+    if remote and (not cleaned.strip() or GLOBAL.search(cleaned)) and not found:
+        return ["remote_global"]
+    if remote and GLOBAL.search(cleaned):
+        found.append("remote_global")
+    return found or ["other"]
+
+
+def visa_of(description: str) -> str:
+    if VISA_NO.search(description):
+        return "not_offered"
+    if VISA_YES.search(description):
+        return "offered"
+    return "unknown"
+
+
 LEVEL_POINTS = {"intern": 40, "entry": 40, "mid": 15, "senior": 0, "unknown": 10}
 ELIGIBILITY_POINTS = {
     "remote_global": 35,
     "remote_india": 35,
     "india_onsite": 25,
     "remote_restricted": 10,
-    "onsite_abroad": 5,
+    "onsite_abroad": 10,
     "unknown": 10,
 }
+VISA_POINTS = {"offered": 20, "unknown": 0, "not_offered": -10}
 
 
 def assess(posting: Posting, skills=DEFAULT_SKILLS) -> Posting:
     posting.level = level_of(posting.title)
     posting.eligibility = eligibility_of(posting.location, posting.remote)
+    posting.regions = regions_of(posting.location, posting.remote)
+    posting.visa = visa_of(posting.description)
     text = f"{posting.title} {posting.description}".lower()
     matched = [s for s in skills if re.search(r"\b" + re.escape(s.lower()) + r"\b", text)]
     skill_points = min(25, 5 * len(matched))
     role_ok = bool(ROLE_HINTS.search(posting.title))
-    posting.score = (
-        LEVEL_POINTS[posting.level]
-        + ELIGIBILITY_POINTS[posting.eligibility]
-        + (skill_points if role_ok else 0)
-    )
+    reach = ELIGIBILITY_POINTS[posting.eligibility]
+    if posting.eligibility in {"onsite_abroad", "remote_restricted"}:
+        # Abroad: an explicit sponsorship/relocation offer is what makes it reachable.
+        reach = max(0, min(35, reach + VISA_POINTS[posting.visa]))
+    posting.score = LEVEL_POINTS[posting.level] + reach + (skill_points if role_ok else 0)
     posting.reasons = [
         f"level: {posting.level}",
         f"eligibility: {posting.eligibility.replace('_', ' ')}",
+        f"region: {', '.join(posting.regions)}",
+        f"visa: {posting.visa.replace('_', ' ')}",
         ("skills: " + ", ".join(matched[:6])) if matched else "no listed skill overlap",
     ]
     if not role_ok:
@@ -334,21 +393,23 @@ def _store(db, board_id, posting: Posting, now: str) -> bool:
         posting.description,
         posting.compensation,
         posting.posted_at,
+        ",".join(posting.regions),
+        posting.visa,
         now,
     )
     if exists:
         db.connection.execute(
             "UPDATE job_postings SET company=?,title=?,location=?,remote=?,url=?,level=?,"
             "eligibility=?,score=?,reasons_json=?,description=?,compensation=?,posted_at=?,"
-            "last_seen_at=?,status=CASE WHEN status='closed' THEN 'new' ELSE status END "
+            "regions=?,visa=?,last_seen_at=?,status=CASE WHEN status='closed' THEN 'new' ELSE status END "
             "WHERE id=?",
             (*values, exists["id"]),
         )
         return False
     db.connection.execute(
         "INSERT INTO job_postings(company,title,location,remote,url,level,eligibility,score,"
-        "reasons_json,description,compensation,posted_at,last_seen_at,board_id,source,"
-        "external_id,first_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "reasons_json,description,compensation,posted_at,regions,visa,last_seen_at,board_id,"
+        "source,external_id,first_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (*values, board_id, posting.source, posting.external_id, now),
     )
     return True
@@ -424,12 +485,28 @@ STATUSES = (
 )
 
 
-def postings(db, *, levels=None, eligibility=None, min_score=0, statuses=None, query=""):
+def postings(
+    db,
+    *,
+    levels=None,
+    eligibility=None,
+    min_score=0,
+    statuses=None,
+    query="",
+    regions=None,
+    visa=None,
+):
     sql = (
-        "SELECT id,score,company,title,level,eligibility,location,compensation,status,url,"
-        "reasons_json,posted_at FROM job_postings WHERE score>=?"
+        "SELECT id,score,company,title,level,regions,visa,eligibility,location,compensation,"
+        "status,url,reasons_json,posted_at FROM job_postings WHERE score>=?"
     )
     params: list = [min_score]
+    if regions:
+        sql += " AND (" + " OR ".join("(','||regions||',') LIKE ?" for _ in regions) + ")"
+        params += [f"%,{r},%" for r in regions]
+    if visa:
+        sql += f" AND visa IN ({','.join('?' * len(visa))})"
+        params += list(visa)
     for column, values in (("level", levels), ("eligibility", eligibility), ("status", statuses)):
         if values:
             sql += f" AND {column} IN ({','.join('?' * len(values))})"
@@ -481,3 +558,92 @@ def add_manual(db, *, company, title, url, location="", remote=False, note="", c
                 (note[:1000], url),
             )
     return posting
+
+
+# --- Finding more companies -------------------------------------------------
+# Job boards are public pages, so a web search restricted to the three ATS hosts
+# surfaces companies hiring for a role in a region. Each hit's URL contains the
+# company's board slug, which is all a refresh needs.
+DISCOVERY_ROLES = (
+    "machine learning intern",
+    "AI engineer intern",
+    "software engineer intern",
+    "new grad software engineer",
+    "junior AI engineer",
+    "junior machine learning engineer",
+)
+DISCOVERY_PLACES = {
+    "remote_global": "remote worldwide",
+    "us": "United States",
+    "canada": "Canada",
+    "uk": "London",
+    "europe": "Europe",
+    "australia": "Australia",
+    "new_zealand": "New Zealand",
+    "india": "India",
+    "singapore": "Singapore",
+}
+
+
+def discovery_queries(places=None, roles=DISCOVERY_ROLES, limit=24) -> list[str]:
+    places = places or list(DISCOVERY_PLACES)
+    queries = [
+        f"{role} {DISCOVERY_PLACES[place]} site:{domain}"
+        for place in places
+        if place in DISCOVERY_PLACES
+        for role in roles
+        for domain in ("jobs.ashbyhq.com", "jobs.lever.co", "boards.greenhouse.io")
+    ]
+    # Interleave so a small limit still spans every place and every ATS.
+    ordered = []
+    for i in range(len(queries)):
+        step = (i * 7) % len(queries)
+        if queries[step] not in ordered:
+            ordered.append(queries[step])
+    for query in queries:
+        if query not in ordered:
+            ordered.append(query)
+    return ordered[:limit]
+
+
+def boards_from_urls(urls) -> list[str]:
+    found = []
+    for url in urls:
+        for pattern, ats in BOARD_URLS:
+            match = pattern.search(url)
+            if match and SLUG.match(match.group(1)) and match.group(1) not in {"v1", "embed"}:
+                board = f"{ats}:{match.group(1).lower()}"
+                if board not in found:
+                    found.append(board)
+                break
+    return found
+
+
+@dataclass
+class BoardDiscovery:
+    queries: int = 0
+    boards_found: list[str] = field(default_factory=list)
+    added: list[str] = field(default_factory=list)
+    errors: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"Ran {self.queries} searches: found {len(self.boards_found)} company boards, "
+            f"{len(self.added)} new. Click Refresh to load their roles."
+            + (f" ({self.errors} searches failed.)" if self.errors else "")
+        )
+
+
+def discover_boards(db, search, queries) -> BoardDiscovery:
+    """`search(query) -> list of hits with .url`; uses the configured search API."""
+    report = BoardDiscovery()
+    urls = []
+    for query in queries:
+        report.queries += 1
+        try:
+            urls += [hit.url for hit in search(query)]
+        except Exception:  # noqa: BLE001 -- one failed search must not stop the rest
+            report.errors += 1
+    report.boards_found = boards_from_urls(urls)
+    report.added = add_boards(db, report.boards_found)
+    return report
