@@ -31,7 +31,7 @@ def app_for(monkeypatch, db, settings=None):
 
 
 @pytest.mark.parametrize(
-    "section", ["Discover", "Review", "Send (preview only)", "Tracker", "Settings"]
+    "section", ["Discover", "Review", "Send (preview only)", "Tracker", "Jobs", "Settings"]
 )
 def test_all_screens_empty_without_network(monkeypatch, db, section):
     app = app_for(monkeypatch, db)
@@ -92,3 +92,21 @@ def test_missing_key_run_renders_actionable_failure(monkeypatch, db):
     assert not app.exception
     assert db.connection.execute("SELECT status FROM discovery_runs").fetchone()[0] == "partial"
     assert not db.connection.execute("SELECT 1 FROM leads").fetchone()
+
+
+def test_jobs_screen_seeds_boards_and_lists_roles_without_network(monkeypatch, db):
+    from agent import jobs
+
+    jobs.add_manual(
+        db,
+        company="Acme",
+        title="AI Engineer Intern",
+        url="https://wellfound.com/jobs/1",
+        location="Remote · Everywhere",
+        remote=True,
+    )
+    app = app_for(monkeypatch, db)
+    app.sidebar.radio[0].set_value("Jobs").run()
+    assert not app.exception and not app.error
+    assert db.connection.execute("SELECT count(*) FROM job_boards").fetchone()[0] >= 40
+    assert list(app.dataframe[0].value["title"]) == ["AI Engineer Intern"]
