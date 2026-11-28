@@ -45,7 +45,18 @@ BUILDERS = re.compile(
     r"bizness|appinstitute|appmakr|mindbody|glofox|wodify|zenplanner|triib|pushpress|"
     r"exercise\.com|tapcart|vajro|plobal|shopney|toast|chownow|olo\.com|bentobox|spoton|"
     r"squareup|clover|punchh|thanx|paytronix|mobilebytes|appsolute|tithely|tithe\.ly|"
-    r"onechurchsoftware|churchlink|hapana|mariana|branded\s?fitness|uplaunch|appstudio",
+    r"onechurchsoftware|churchlink|hapana|mariana|branded\s?fitness|uplaunch|appstudio|"
+    r"echurchapps|digitalpharmacist|lumistry|rxwiki|pioneerrx|semitarx|mscripts|hungerrush|"
+    r"medicalmine|charm\.phr|mersatech|tdsclinical|cmiworld|migym|ezfacility|sibisoft|"
+    r"globalnorthstar|qbiki|gomobileapptools|\.brand\.",
+    re.IGNORECASE,
+)
+
+
+# Institutions and large organisations have their own teams; not our buyer.
+INSTITUTIONS = re.compile(
+    r"universit|regents|college|department of|county|city of|state of|\.gov\b|\.edu\b|"
+    r"school district|healthcare,? inc|health plan",
     re.IGNORECASE,
 )
 
@@ -154,7 +165,7 @@ def assess(
         elif BUILDERS.search(haystack):
             verdict = "builder"
             reasons.append("built on an app platform that maintains it")
-        elif installs is not None and installs >= MAX_INSTALLS:
+        elif (installs is not None and installs >= MAX_INSTALLS) or INSTITUTIONS.search(haystack):
             verdict = "too_big"
         elif installs is not None and installs < MIN_INSTALLS:
             verdict = "too_small"
