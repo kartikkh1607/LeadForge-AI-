@@ -14,7 +14,7 @@ def test_migrations_idempotent_and_persistent(tmp_path):
         db.migrate()
         lead = db.add_lead(Lead(domain="https://www.example.com/"))
         db.migrate()
-        assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 10
+        assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 11
         assert db.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     with Database(path) as db:
         db.migrate()
@@ -32,7 +32,7 @@ def test_failed_migration_rolls_back(db, tmp_path):
     assert not db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE name='transient'"
     ).fetchone()
-    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 10
+    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 11
 
 
 def test_changed_migration_rejected(db, tmp_path):

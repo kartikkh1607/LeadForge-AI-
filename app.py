@@ -677,6 +677,69 @@ def show_jobs(service):
                 )
 
 
+def show_apps(service):
+    from datetime import date
+
+    from agent import apps
+
+    db = service.db
+    st.title("App rescue")
+    st.caption(
+        "Small businesses whose Android app has not been updated since before Google Play's "
+        "target API deadlines, so it is likely hidden from new users on newer phones. Reads "
+        "public Play Store pages only; nothing is emailed from here."
+    )
+    count = lambda sql: db.connection.execute(sql).fetchone()[0]
+    a, b, c = st.columns(3)
+    a.metric("Apps checked", count("SELECT count(*) FROM app_leads"))
+    b.metric("Leads", count("SELECT count(*) FROM app_leads WHERE verdict='lead'"))
+    c.metric("Emailed", count("SELECT count(*) FROM app_leads WHERE status='emailed'"))
+
+    with st.form("app_scan"):
+        text = st.text_area(
+            "Play Store searches, one per line",
+            placeholder="gym app\ndental clinic app\npizza restaurant app\nchurch app",
+        )
+        x, y = st.columns(2)
+        countries = x.multiselect(
+            "Developer country",
+            ["United States", "United Kingdom", "Canada", "Australia", "New Zealand"],
+            ["United States"],
+            help="UK, Canada and Australia have stricter cold-email rules than the US.",
+        )
+        cutoff = y.date_input("Last updated on or before", apps.DEFAULT_CUTOFF)
+        if st.form_submit_button("Scan Play Store", type="primary"):
+
+            def run_scan():
+                with st.spinner("Reading Play Store pages…"):
+                    st.session_state["apps_summary"] = apps.scan(
+                        db,
+                        text.splitlines(),
+                        cutoff=cutoff if isinstance(cutoff, date) else apps.DEFAULT_CUTOFF,
+                        countries=tuple(countries),
+                    ).summary()
+
+            perform("app_scan", run_scan, success="Scan finished.")
+    if "apps_summary" in st.session_state:
+        st.info(st.session_state["apps_summary"])
+
+    x, y = st.columns(2)
+    verdicts = x.multiselect("Verdict", list(apps.VERDICTS), ["lead"])
+    statuses = y.multiselect(
+        "Status", list(apps.STATUSES), ["new", "drafted", "emailed", "replied"]
+    )
+    rows = apps.app_leads(db, verdicts=verdicts, statuses=statuses)
+    st.caption(f"{len(rows)} apps match, oldest update first.")
+    table(rows)
+
+    with st.expander("Update an app lead's status"), st.form("app_status"):
+        lead_id = st.number_input("App lead id (from the table)", 1, step=1)
+        status = st.selectbox("Status", list(apps.STATUSES), index=1)
+        note = st.text_input("Note (optional)", max_chars=1000)
+        if st.form_submit_button("Save status"):
+            perform("app_status", lambda: apps.set_status(db, int(lead_id), status, note))
+
+
 def show_settings(service):
     st.title("Settings")
     settings = service.settings
@@ -763,7 +826,8 @@ def main():
     st.sidebar.title("LeadForge AI")
     st.sidebar.caption("Evidence-led outreach workspace")
     section = st.sidebar.radio(
-        "Workspace", ["Discover", "Review", "Send (preview only)", "Tracker", "Jobs", "Settings"]
+        "Workspace",
+        ["Discover", "Review", "Send (preview only)", "Tracker", "Jobs", "App rescue", "Settings"],
     )
     st.sidebar.divider()
     st.sidebar.info("Phase 7 · Owner tests only\n\nNo sending from this dashboard.")
@@ -781,6 +845,7 @@ def main():
                 "Send (preview only)": show_send,
                 "Tracker": show_tracker,
                 "Jobs": show_jobs,
+                "App rescue": show_apps,
                 "Settings": show_settings,
             }[section](service)
     except Exception:  # noqa: BLE001 -- safe outer UI boundary for configuration/database errors
