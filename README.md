@@ -64,7 +64,19 @@ uv run python -m agent.pipeline_cli draft --lead-id 12
 uv run python -m agent.pipeline_cli progress --lead-id 12 --stage demo_sent --note "Sent demo"
 uv run python -m agent.pipeline_cli progress --lead-id 12 --stage won --value 150
 uv run python -m agent.pipeline_cli summary
+
+# App rescue: small businesses whose Android app is stale on Google Play (read-only)
+uv run python -m scripts.app_scan "gym app" "dental clinic app" "pizza restaurant app"
+uv run python -m scripts.app_scan --list
 ```
+
+**App rescue** (also a dashboard page) searches Google Play, opens each app's public listing
+and keeps apps that were last updated on or before 31 Aug 2025, have 100 to 1M downloads,
+show a contact email, and list a developer address in an allowed country (default: United
+States). Apps built on platforms such as Subsplash, Vimeo OTT or Mindbody are skipped because
+the platform keeps them current. Since 31 Aug 2026, Google Play hides existing apps that target
+below API 35 from new users on newer phones, so these apps are *likely* affected; the listing
+does not show the target API level, so outreach should say "likely", never "definitely".
 
 Both Gmail actions are also buttons on the Tracker page. **Import sent emails** reads your
 Sent folder (default: subject contains "quick idea", last 180 days), matches each recipient
