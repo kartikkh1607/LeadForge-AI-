@@ -1,6 +1,7 @@
 """Niche search adapters. Provider snippets are discovery hints, never source evidence."""
 
 import json
+import re
 import sqlite3
 from collections.abc import Sequence
 
@@ -91,13 +92,18 @@ class SearchClient:
         if provider == "tavily":
             endpoint = "https://api.tavily.com/search"
             headers = {"Authorization": f"Bearer {key.get_secret_value()}"}
+            # Tavily ignores Google-style "site:"; translate it to include_domains.
+            sites = re.findall(r"\bsite:([\w.-]+)", query)
+            plain_query = re.sub(r"\s*\bsite:[\w.-]+", "", query).strip() or query
             payload = {
-                "query": query,
+                "query": plain_query,
                 "max_results": self.settings.search_results_per_query,
                 "search_depth": "basic",
                 "include_answer": False,
                 "include_raw_content": False,
             }
+            if sites:
+                payload["include_domains"] = sites
             field, url_key = "results", "url"
         else:
             endpoint = "https://google.serper.dev/search"

@@ -556,9 +556,9 @@ def show_jobs(service):
     db = service.db
     st.title("Jobs")
     st.caption(
-        "Internships and entry-level roles from companies' own public job boards (Greenhouse, "
-        "Lever, Ashby), ranked for someone applying from India. Read-only: nothing is applied "
-        "for or emailed."
+        "Internships and entry-level roles worldwide (US, Canada, UK, Europe, Australia, New "
+        "Zealand, remote) from companies' own public job boards (Greenhouse, Lever, Ashby). "
+        "Read-only: nothing is applied for or emailed."
     )
     if not jobs.boards(db):
         jobs.seed_boards(db)
@@ -588,15 +588,55 @@ def show_jobs(service):
                 st.session_state["jobs_summary"] = jobs.refresh(db).summary()
 
         perform("jobs_refresh", run_refresh, success="Job boards refreshed.")
+    with st.expander("Find more companies hiring juniors (uses your search API)"):
+        st.caption(
+            "Searches the web for intern / new-grad / junior AI and software roles hosted on "
+            "Ashby, Lever and Greenhouse in the regions you pick, and adds every company board "
+            "it finds. Each search uses one search-API credit."
+        )
+        places = st.multiselect(
+            "Regions to search",
+            list(jobs.DISCOVERY_PLACES),
+            ["us", "canada", "uk", "europe", "australia", "new_zealand", "remote_global"],
+        )
+        budget = st.number_input("Number of searches", 3, 60, 24)
+        if st.button("Find companies"):
+
+            def run_discovery():
+                from agent.search import SearchClient
+
+                client = SearchClient(service.settings)
+                with st.spinner("Searching job boards…"):
+                    report = jobs.discover_boards(
+                        db, client.search, jobs.discovery_queries(places, limit=int(budget))
+                    )
+                st.session_state["jobs_summary"] = report.summary()
+
+            perform("jobs_discover", run_discovery, success="Company search finished.")
     if "jobs_summary" in st.session_state:
         st.info(st.session_state["jobs_summary"])
 
-    a, b, c, d = st.columns(4)
+    a, b, c = st.columns(3)
     levels = a.multiselect(
         "Level", ["intern", "entry", "mid", "senior", "unknown"], ["intern", "entry"]
     )
-    eligible = b.multiselect(
-        "Can I apply from India?",
+    regions = b.multiselect(
+        "Region (empty = everywhere)",
+        list(jobs.REGIONS),
+        [],
+        help="us, canada, uk, europe, australia, new_zealand, india, singapore, "
+        "remote_global (open to anyone), other",
+    )
+    visa = c.multiselect(
+        "Visa sponsorship",
+        ["offered", "unknown", "not_offered"],
+        ["offered", "unknown"],
+        help="Read from the job description. 'offered' = mentions visa sponsorship or "
+        "relocation support; 'not_offered' = says it can't sponsor.",
+    )
+    a, b, c = st.columns(3)
+    eligible = a.multiselect(
+        "Work arrangement",
         [
             "remote_global",
             "remote_india",
@@ -605,12 +645,13 @@ def show_jobs(service):
             "onsite_abroad",
             "unknown",
         ],
-        ["remote_global", "remote_india", "india_onsite"],
+        [],
+        help="Empty = all. remote_restricted = remote but only inside certain countries.",
     )
-    statuses = c.multiselect(
+    statuses = b.multiselect(
         "Status", list(jobs.STATUSES), ["new", "shortlisted", "applied", "emailed", "interview"]
     )
-    score = d.number_input("Minimum score", 0, 100, 0)
+    score = c.number_input("Minimum score", 0, 100, 0)
     query = st.text_input("Search title, company or description", "")
     rows = jobs.postings(
         db,
@@ -619,10 +660,13 @@ def show_jobs(service):
         min_score=int(score),
         statuses=statuses,
         query=query.strip(),
+        regions=regions,
+        visa=visa,
     )
     st.caption(
-        f"{len(rows)} roles match. Score = level fit (40) + where you can work from "
-        "(35) + overlap with your skills (25)."
+        f"{len(rows)} roles match. Score = level fit (40) + how reachable it is from India "
+        "(35: remote-anywhere highest; abroad onsite counts only if it offers visa "
+        "sponsorship) + overlap with your skills (25)."
     )
     table(rows)
 

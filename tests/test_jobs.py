@@ -131,7 +131,7 @@ def test_assess_ranks_reachable_intern_above_senior_onsite():
     intern, senior = (jobs.assess(p) for p in posts)
     assert intern.score == 40 + 35 + 20  # 4 skills x 5
     assert intern.location == "Remote"
-    assert senior.score <= 15
+    assert senior.score <= 20 < intern.score
     assert any("langchain" in r for r in intern.reasons)
 
 
@@ -207,3 +207,113 @@ def test_seed_file_is_committed_with_the_package():
         check=False,
     )
     assert tracked.returncode == 0, "seed list must be tracked by git, not in ignored data/"
+
+
+@pytest.mark.parametrize(
+    "location,remote,expected",
+    [
+        ("San Francisco, CA", False, ["us"]),
+        ("Toronto, Ontario", False, ["canada"]),
+        ("London, UK", False, ["uk"]),
+        ("Berlin; Amsterdam", False, ["europe"]),
+        ("Sydney, Australia", False, ["australia"]),
+        ("Auckland", False, ["new_zealand"]),
+        ("Remote", True, ["remote_global"]),
+        ("Remote - Worldwide", True, ["remote_global"]),
+        ("Bengaluru; Singapore", False, ["india", "singapore"]),
+        ("Mars Base", False, ["other"]),
+    ],
+)
+def test_regions(location, remote, expected):
+    assert jobs.regions_of(location, remote) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("We offer visa sponsorship and relocation support.", "offered"),
+        ("We are unable to sponsor visas for this role.", "not_offered"),
+        ("Candidates must be authorized to work in the US.", "not_offered"),
+        ("This role does not offer visa sponsorship.", "not_offered"),
+        ("Great benefits.", "unknown"),
+    ],
+)
+def test_visa(text, expected):
+    assert jobs.visa_of(text) == expected
+
+
+def test_visa_offer_makes_abroad_role_reachable():
+    base = {"source": "s", "company": "c", "url": "https://x.io/1", "remote": False}
+    with_visa = jobs.assess(
+        jobs.Posting(
+            external_id="1",
+            title="Software Engineer Intern",
+            location="Berlin",
+            description="Python. We offer visa sponsorship.",
+            **base,
+        )
+    )
+    without = jobs.assess(
+        jobs.Posting(
+            external_id="2",
+            title="Software Engineer Intern",
+            location="Berlin",
+            description="Python. We cannot sponsor visas.",
+            **base,
+        )
+    )
+    assert with_visa.score - without.score == 30
+    assert with_visa.regions == ["europe"] and with_visa.visa == "offered"
+
+
+def test_region_and_visa_filters(db):
+    for i, (loc, desc) in enumerate(
+        [("Toronto", "visa sponsorship available"), ("London", ""), ("Remote", "")]
+    ):
+        jobs.add_manual(
+            db,
+            company=f"c{i}",
+            title="AI Engineer Intern",
+            url=f"https://example.com/{i}",
+            location=loc,
+            remote=loc == "Remote",
+            clock=lambda: NOW,
+        )
+        db.connection.execute(
+            "UPDATE job_postings SET visa=? WHERE external_id=?",
+            ("offered" if desc else "unknown", f"https://example.com/{i}"),
+        )
+    titles = lambda **kw: [r["company"] for r in jobs.postings(db, **kw)]
+    assert set(titles(regions=["canada", "uk"])) == {"c0", "c1"}
+    assert titles(regions=["remote_global"]) == ["c2"]
+    assert titles(visa=["offered"]) == ["c0"]
+
+
+def test_board_discovery_from_search_hits(db):
+    class Hit:
+        def __init__(self, url):
+            self.url = url
+
+    def search(query):
+        assert "site:" in query
+        if "fail" in query:
+            raise RuntimeError("quota")
+        return [
+            Hit("https://jobs.ashbyhq.com/NewCo/123-abc"),
+            Hit("https://jobs.lever.co/acme/xyz"),
+            Hit("https://job-boards.greenhouse.io/beta/jobs/77"),
+            Hit("https://example.com/careers"),
+        ]
+
+    queries = jobs.discovery_queries(["us", "europe"], limit=5)
+    assert len(queries) == 5 and len(set(queries)) == 5
+    report = jobs.discover_boards(db, search, [*queries, "fail site:jobs.lever.co"])
+    assert report.boards_found == ["ashby:newco", "lever:acme", "greenhouse:beta"]
+    assert report.errors == 1 and len(report.added) == 3
+    assert jobs.discover_boards(db, search, queries[:1]).added == []
+
+
+def test_discovery_queries_cover_all_places():
+    queries = jobs.discovery_queries(limit=200)
+    for place in ("United States", "Canada", "London", "Europe", "Australia", "New Zealand"):
+        assert any(place in q for q in queries)
